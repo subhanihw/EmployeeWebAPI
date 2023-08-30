@@ -1,9 +1,12 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using AutoMapper;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SampleWeb.API.CustomActionFilters;
 using SampleWeb.API.Data;
 using SampleWeb.API.Models;
 using SampleWeb.API.Models.DTO;
+using SampleWeb.API.Repositories;
 
 namespace SampleWeb.API.Controllers
 {
@@ -12,124 +15,73 @@ namespace SampleWeb.API.Controllers
     [ApiController]
     public class EmployeeController : ControllerBase
     {
-        private readonly EmployeeDbContext _dbContext;
+        private readonly IEmployeeRepository employeeRepository;
+        private readonly IMapper mapper;
 
-        public EmployeeController(EmployeeDbContext dbContext)
+        public EmployeeController(IEmployeeRepository employeeRepository, IMapper mapper)
         {
-            this._dbContext = dbContext;
+            this.employeeRepository = employeeRepository;
+            this.mapper = mapper;
         }
 
-        // GET: https://localhost:7110/api/employee
+        // GET All Employee Data 
         [HttpGet]
-        public IActionResult GetAllEmployee()
+        public async Task<IActionResult> GetAllEmployee([FromQuery] string? filterOn, [FromQuery] string? filterQuery,
+            [FromQuery] string? sortBy, [FromQuery] bool? isAscending = true)
         {
             // Getting Data from Db using Domain models
-            var employees = _dbContext.Employee.ToList();
-
-            // Map Domain Models to DTOs
-            var employeeDto = new List<EmployeeDto>();
-
-            foreach (var employee in employees)
-            {
-                employeeDto.Add(new EmployeeDto()
-                {
-                    Id = employee.Id,
-                    Name = employee.Name,
-                    PrimarySkill = employee.PrimarySkill,
-                    Experience = employee.Experience
-                });
-            }
-            return Ok(employeeDto);
+            var employees = await employeeRepository.GetAllAsync(filterOn, filterQuery, sortBy, isAscending ?? true);
+            return Ok(mapper.Map<List<EmployeeDto>>(employees));
         }
 
         [HttpGet]
         [Route("{id}")]
-        public IActionResult GetEmployee(int id)
+        public async Task<IActionResult> GetEmployee(int id)
         {
-            var employee = _dbContext.Employee.Find(id);
+            var employee = await employeeRepository.GetEmployeeByIDAsync(id);
+
             if (employee == null) { return NotFound($"Employee with Id = {id} not found"); }
 
-            var employeeDto = new EmployeeDto
-            {
-                Id = employee.Id,
-                Name = employee.Name,
-                PrimarySkill = employee.PrimarySkill,
-                Experience = employee.Experience
-            };
-
-            return Ok(employee);
+            return Ok(mapper.Map<EmployeeDto>(employee));
         }
 
         [HttpDelete]
         [Route("{id}")]
-        public IActionResult DeleteEmployee(int id)
+        public async Task<IActionResult> DeleteEmployee(int id)
         {
-            var employee = _dbContext.Employee.Find(id);
+            var employee = await employeeRepository.DeleteEmployeeAsync(id);
             if (employee == null)
             {
                 return NotFound($"Employee with Id = {id} not found");
             }
-            _dbContext.Employee.Remove(employee);
-            _dbContext.SaveChanges();
-
-            var employeeDto = new EmployeeDto
-            {
-                Id = employee.Id,
-                Name = employee.Name,
-                PrimarySkill = employee.PrimarySkill,
-                Experience = employee.Experience
-            };
-            return Ok(employeeDto);
-
+            return Ok(mapper.Map<EmployeeDto>(employee));
         }
 
         [HttpPost]
-        public IActionResult CreateEmployee([FromBody] CreateEmployeeDto createEmployeeDto)
+        [ValidateModel]
+        public async Task<IActionResult> CreateEmployee([FromBody] CreateEmployeeDto createEmployeeDto)
         {
-            var employee = new Employee
-            {
-                Name = createEmployeeDto.Name,
-                PrimarySkill = createEmployeeDto.PrimarySkill,
-                Experience = createEmployeeDto.Experience
-            };
+            var employee = mapper.Map<Employee>(createEmployeeDto);
+            employee = await employeeRepository.CreateEmployeeASync(employee);
 
-            _dbContext.Employee.Add(employee);
-            _dbContext.SaveChanges();
+            var employeeDto = mapper.Map<EmployeeDto>(employee);
 
-
-            var employeeDto = new EmployeeDto
-            {
-                Id = employee.Id,
-                Name = employee.Name,
-                PrimarySkill = employee.PrimarySkill,
-                Experience = employee.Experience
-            };
             return CreatedAtAction(nameof(GetEmployee), new { Id = employeeDto.Id }, employeeDto);
+
         }
 
         [HttpPut]
         [Route("{id}")]
-        public IActionResult Update(int id, [FromBody] UpdateEmployeeDto updateEmployeeDto)
+        [ValidateModel]
+        public async Task<IActionResult> Update(int id, [FromBody] UpdateEmployeeDto updateEmployeeDto)
         {
-            var employee = _dbContext.Employee.Find(id);
+            var employeeModel = mapper.Map<Employee>(updateEmployeeDto);
+            var employee = await employeeRepository.UpdateEmployeeAsync(id, employeeModel);
 
             if (employee == null)
-                return NotFound("Emp with Id " + id + "Not found");
+                return NotFound("Emp with Id " + id + " Not found");
 
-            employee.Name = updateEmployeeDto.Name;
-            employee.PrimarySkill = updateEmployeeDto.PrimarySkill;
-            employee.Experience = updateEmployeeDto.Experience;
-
-            _dbContext.SaveChanges();
-
-            var employeeDto = new UpdateEmployeeDto
-            {
-                Name = employee.Name,
-                PrimarySkill = employee.PrimarySkill,
-                Experience = employee.Experience
-            };
-            return Ok(employeeDto);
-
+            return Ok(mapper.Map<UpdateEmployeeDto>(employee));
         }
     }
 }
